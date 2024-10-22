@@ -1,0 +1,112 @@
+const WebSocket = require('ws');
+const http = require('http');
+
+const server = http.createServer();
+const wss = new WebSocket.Server({ server });
+
+const players = new Map();
+let currentPlayerIndex = 0;
+let gameStarted = false;
+const maxPlayers = 6;
+
+function broadcastToAll(message) {
+    wss.clients.forEach(client => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(JSON.stringify(message));
+        }
+    });
+}
+
+function updateLobby() {
+    const playerList = Array.from(players.values()).map(player => ({
+        nick: player.nick,
+        avatar: player.avatar
+    }));
+    broadcastToAll({ type: 'lobbyUpdate', players: playerList });
+}
+
+function startGame() {
+    if (players.size < 2 || players.size > maxPlayers) {
+        return;
+    }
+    gameStarted = true;
+    const deck = createDeck();
+    const playerArray = Array.from(players.values());
+    playerArray.forEach(player => {
+        const cards = dealCards(deck, Math.floor(52 / players.size));
+        player.cards = cards;
+        player.ws.send(JSON.stringify({ type: 'gameStart', cards: cards }));
+    });
+    currentPlayerIndex = 0;
+    broadcastToAll({ type: 'turnUpdate', currentPlayer: playerArray[currentPlayerIndex].nick });
+}
+
+function createDeck() {
+    const suits = ['hearts', 'diamonds', 'clubs', 'spades'];
+    const values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    const deck = [];
+    for (let suit of suits) {
+        for (let value of values) {
+            deck.push(`${value}_of_${suit}`);
+        }
+    }
+    return shuffle(deck);
+}
+
+function shuffle(array) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+    return array;
+}
+
+function dealCards(deck, count) {
+    return deck.splice(0, count);
+}
+
+wss.on('connection', (ws) => {
+    ws.on('message', (message) => {
+        const data = JSON.parse(message);
+        switch (data.type) {
+            case 'joinLobby':
+                if (players.size < maxPlayers && !gameStarted) {
+                    players.set(ws, { ws, nick: data.nick, avatar: data.avatar });
+                    updateLobby();
+                }
+                break;
+            case 'startGame':
+                if (!gameStarted) {
+                    startGame();
+                }
+                break;
+            case 'playCards':
+                if (gameStarted && players.get(ws) === Array.from(players.values())[currentPlayerIndex]) {
+                    // Logika gry dla zagranych kart
+                    broadcastToAll({ type: 'cardPlayed', count: data.cards.length });
+                    currentPlayerIndex = (currentPlayerIndex + 1) % players.size;
+                    broadcastToAll({ type: 'turnUpdate', currentPlayer: Array.from(players.values())[currentPlayerIndex].nick });
+                }
+                break;
+            case 'accuse':
+                if (gameStarted && players.get(ws) === Array.from(players.values())[currentPlayerIndex]) {
+                    // Logika oskarżenia o kłamstwo
+                }
+                break;
+        }
+    });
+
+    ws.on('close', () => {
+        players.delete(ws);
+        if (gameStarted) {
+            // Obsługa wyjścia gracza podczas gry
+        } else {
+            updateLobby();
+        }
+    });
+});
+
+const port = 8080;
+server.listen(port, () => {
+    console.log(`Serwer uruchomiony na porcie ${port}`);
+});

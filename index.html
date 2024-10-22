@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ucieczka z Kremla</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            text-align: center;
+            padding: 20px;
+        }
+        .game-container, .lobby-container {
+            margin: 0 auto;
+            width: 60%;
+            background-color: white;
+            padding: 20px;
+            box-shadow: 0px 0px 10px rgba(0,0,0,0.1);
+        }
+        .card {
+            display: inline-block;
+            width: 60px;
+            height: 90px;
+            background-color: #eee;
+            border: 1px solid #ccc;
+            margin: 10px;
+            text-align: center;
+            line-height: 90px;
+            font-size: 24px;
+            cursor: pointer;
+            user-select: none;
+            background-size: cover;
+            background-position: center;
+        }
+        .card.selected {
+            border: 3px solid #ff69b4;
+            box-shadow: 0 0 10px rgba(255, 105, 180, 0.5);
+        }
+        .button {
+            padding: 10px 20px;
+            background-color: #28a745;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .button:hover {
+            background-color: #218838;
+        }
+        .button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .status {
+            font-size: 20px;
+            margin: 20px 0;
+        }
+        #playerList {
+            list-style-type: none;
+            padding: 0;
+        }
+        #playerList li {
+            margin: 10px 0;
+        }
+        .avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            margin-right: 10px;
+            object-fit: cover;
+        }
+        #customAvatarPreview {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            margin: 10px auto;
+            display: none;
+            object-fit: cover;
+        }
+        .player-position {
+            display: inline-block;
+            width: 100px;
+            height: 100px;
+            border: 2px dashed #ccc;
+            margin: 10px;
+            cursor: pointer;
+        }
+        .player-position.selected {
+            border: 2px solid #28a745;
+        }
+        #positionSelection {
+            margin-top: 20px;
+        }
+        .game-player {
+            display: inline-block;
+            width: 100px;
+            height: 120px;
+            margin: 10px;
+            text-align: center;
+        }
+        .game-player img {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        #gamePlayers {
+            margin-bottom: 20px;
+        }
+        #turnTimer {
+            font-size: 24px;
+            font-weight: bold;
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            z-index: 1000;
+        }
+        #positionContainer, #gamePlayersContainer {
+            position: relative;
+            width: 100%;
+            height: 400px;
+        }
+        .player-position, .game-player {
+            position: absolute;
+        }
+        .player-position[data-position="0"], .game-player[data-position="0"] { top: 0; left: 0; }
+        .player-position[data-position="1"], .game-player[data-position="1"] { top: 0; right: 0; }
+        .player-position[data-position="2"], .game-player[data-position="2"] { top: 0; left: 50%; transform: translateX(-50%); }
+        .player-position[data-position="3"], .game-player[data-position="3"] { bottom: 0; left: 0; }
+        .player-position[data-position="4"], .game-player[data-position="4"] { bottom: 0; right: 0; }
+        .player-position[data-position="5"], .game-player[data-position="5"] { bottom: 0; left: 50%; transform: translateX(-50%); }
+        .game-player.current-player {
+            border: 3px solid #28a745;
+            box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
+        }
+    </style>
+</head>
+<body>
+    <div id="turnTimer" style="display: none;">Pozostały czas: 30s</div>
+    <div id="lobbyContainer" class="lobby-container">
+        <h1>Lobby - Ucieczka z Kremla</h1>
+        <input type="text" id="nickInput" placeholder="Podaj swój nick"><br><br>
+
+        <div>
+            <input type="file" id="customAvatarInput" accept="image/*" style="display: none;">
+            <label for="customAvatarInput" class="button">Dodaj własny awatar</label>
+        </div>
+        <img id="customAvatarPreview" alt="Podgląd awatara">
+        <br>    
+        <div id="positionSelection">
+            <h3>Wybierz swoją pozycję:</h3>
+            <div id="positionContainer"></div>
+        </div>
+        <br>
+        <button id="joinLobby" class="button">Dołącz do lobby</button>
+        <button id="reconnectButton" class="button" style="display: none;">Połącz ponownie</button>
+        <div id="lobbyStatus" class="status">Oczekiwanie na graczy...</div>
+        <ul id="playerList"></ul>
+        <button id="startGame" class="button" disabled>Rozpocznij grę</button>
+    </div>
+
+    <div id="gameContainer" class="game-container" style="display: none;">
+        <h1>Ucieczka z Kremla</h1>
+        <div id="gamePlayersContainer"></div>
+        <div id="gameStatus" class="status">Oczekiwanie na rozpoczęcie gry...</div>
+        <div id="playerCards" class="cards">
+            <!-- Karty gracza będą się tu pojawiać -->
+        </div>
+        <button id="playCard" class="button" disabled>Rzuć Kartę</button>
+        <button id="accuse" class="button" disabled>Oskarż o Kłamstwo</button>
+        <div id="playedCardsInfo"></div>
+    </div>
+
+    <script>
+        let socket;
+        let playerNick = '';
+        let playerAvatar = '';
+        let playerPosition = -1;
+        let playerCards = [];
+        let selectedCards = [];
+        let playedCardsCount = 0;
+        let isInLobby = false;
+        let roomId = '';
+        let allPlayers = [];
+        let turnTimer;
+        let remainingTime = 30;
+
+        function connectWebSocket() {
+            socket = new WebSocket('ws://localhost:8080');
+
+            socket.onopen = function() {
+                console.log('Połączono z serwerem WebSocket');
+                const savedData = JSON.parse(localStorage.getItem('gameData'));
+                if (savedData) {
+                    playerNick = savedData.nick;
+                    playerAvatar = savedData.avatar;
+                    playerPosition = savedData.position;
+                    roomId = savedData.roomId;
+                    socket.send(JSON.stringify({
+                        type: 'rejoinLobby',
+                        nick: playerNick,
+                        avatar: playerAvatar,
+                        position: playerPosition,
+                        roomId: roomId
+                    }));
+                }
+            };
+
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                switch(data.type) {
+                    case 'lobbyUpdate':
+                        updateLobby(data.players, data.playerCount);
+                        break;
+                    case 'gameStart':
+                        startGame(data.cards, data.players);
+                        break;
+                    case 'turnUpdate':
+                        updateTurn(data.currentPlayer);
+                        break;
+                    case 'cardPlayed':
+                        updatePlayedCards(data.count);
+                        break;
+                    case 'gameStateUpdate':
+                        updateGameState(data.gameState);
+                        break;
+                }
+            };
+
+            socket.onclose = function() {
+                console.log('Połączenie WebSocket zostało zamknięte');
+                document.getElementById('reconnectButton').style.display = 'inline-block';
+            };
+        }
+
+  
+            connectWebSocket();
+       
+
+        document.getElementById('customAvatarInput').addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    playerAvatar = e.target.result;
+                    const preview = document.getElementById('customAvatarPreview');
+                    preview.src = playerAvatar;
+                    preview.style.display = 'block';
+                }
+                reader.readAsDataURL(file);
+            }
+        });
+
+        function createPositionSelection() {
+            const positionContainer = document.getElementById('positionContainer');
+            for (let i = 0; i < 6; i++) {
+                const positionElement = document.createElement('div');
+                positionElement.className = 'player-position';
+                positionElement.dataset.position = i;
+                positionElement.textContent = i + 1;
+                positionElement.addEventListener('click', selectPosition);
+                positionContainer.appendChild(positionElement);
+            }
+        }
+
+        function selectPosition(event) {
+            const positions = document.querySelectorAll('.player-position');
+            positions.forEach(pos => pos.classList.remove('selected'));
+            event.target.classList.add('selected');
+            playerPosition = parseInt(event.target.dataset.position);
+        }
+
+        createPositionSelection();
+
+        document.getElementById('joinLobby').addEventListener('click', () => {
+            playerNick = document.getElementById('nickInput').value;
+            if (playerNick && playerAvatar && playerPosition !== -1) {
+                socket.send(JSON.stringify({
+                    type: 'joinLobby',
+                    nick: playerNick,
+                    avatar: playerAvatar,
+                    position: playerPosition
+                }));
+                isInLobby = true;
+                localStorage.setItem('gameData', JSON.stringify({
+                    nick: playerNick,
+                    avatar: playerAvatar,
+                    position: playerPosition,
+                    roomId: roomId
+                }));
+            } else {
+                alert('Podaj nick, wybierz awatar i pozycję!');
+            }
+        });
+
+        document.getElementById('startGame').addEventListener('click', () => {
+            if (isInLobby) {
+                socket.send(JSON.stringify({ type: 'startGame' }));
+            } else {
+                alert('Musisz najpierw dołączyć do lobby!');
+            }
+        });
+
+        document.getElementById('reconnectButton').addEventListener('click', () => {
+            connectWebSocket();
+            document.getElementById('reconnectButton').style.display = 'none';
+        });
+
+        function updateLobby(players, playerCount) {
+            allPlayers = players;
+            const playerList = document.getElementById('playerList');
+            playerList.innerHTML = '';
+            players.forEach(player => {
+                const li = document.createElement('li');
+                const avatarImg = document.createElement('img');
+                avatarImg.src = player.avatar.startsWith('data:') ? player.avatar : `avatars/${player.avatar}.png`;
+                avatarImg.alt = player.nick;
+                avatarImg.className = 'avatar';
+                li.appendChild(avatarImg);
+                li.appendChild(document.createTextNode(` ${player.nick} (Pozycja: ${player.position + 1})`));
+                playerList.appendChild(li);
+            });
+            document.getElementById('lobbyStatus').innerText = `Graczy w lobby: ${playerCount}/6`;
+            
+            // Aktywuj przycisk "Rozpocznij grę" gdy jest co najmniej 2 graczy
+            const startGameButton = document.getElementById('startGame');
+            startGameButton.disabled = playerCount < 2;
+        }
+
+        function startGame(cards, players) {
+            document.getElementById('lobbyContainer').style.display = 'none';
+            document.getElementById('gameContainer').style.display = 'block';
+            playerCards = cards;
+            renderCards();
+            renderGamePlayers(players);
+            document.getElementById('gameStatus').innerText = 'Gra rozpoczęta! Oczekiwanie na twoją turę...';
+        }
+
+        function renderGamePlayers(players) {
+            const gamePlayersContainer = document.getElementById('gamePlayersContainer');
+            gamePlayersContainer.innerHTML = '';
+            players.forEach(player => {
+                const playerElement = document.createElement('div');
+                playerElement.className = 'game-player';
+                playerElement.dataset.position = player.position;
+                const avatarImg = document.createElement('img');
+                avatarImg.src = player.avatar.startsWith('data:') ? player.avatar : `avatars/${player.avatar}.png`;
+                avatarImg.alt = player.nick;
+                playerElement.appendChild(avatarImg);
+                const nickElement = document.createElement('div');
+                nickElement.textContent = player.nick;
+                playerElement.appendChild(nickElement);
+                if (player.nick === playerNick) {
+                    playerElement.classList.add('current-player');
+                }
+                gamePlayersContainer.appendChild(playerElement);
+            });
+        }
+
+        function renderCards() {
+            const cardContainer = document.getElementById('playerCards');
+            cardContainer.innerHTML = '';
+            playerCards.forEach((card, index) => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'card';
+                cardElement.style.backgroundImage = `url('${card}.png')`;
+                cardElement.dataset.index = index;
+                cardElement.addEventListener('click', toggleCardSelection);
+                cardContainer.appendChild(cardElement);
+            });
+        }
+
+        function toggleCardSelection(event) {
+            event.preventDefault();
+            const cardElement = event.target;
+            const cardIndex = parseInt(cardElement.dataset.index);
+
+            if (cardElement.classList.contains('selected')) {
+                cardElement.classList.remove('selected');
+                selectedCards = selectedCards.filter(index => index !== cardIndex);
+            } else {
+                if (selectedCards.length < 3) {
+                    cardElement.classList.add('selected');
+                    selectedCards.push(cardIndex);
+                } else {
+                    alert('Możesz wybrać maksymalnie 3 karty!');
+                }
+            }
+        }
+
+        document.getElementById('playCard').addEventListener('click', () => {
+            if (selectedCards.length > 0) {
+                socket.send(JSON.stringify({
+                    type: 'playCards',
+                    cards: selectedCards.map(index => playerCards[index])
+                }));
+                removePlayedCards();
+            } else {
+                alert('Wybierz kartę do rzucenia!');
+            }
+        });
+
+        document.getElementById('accuse').addEventListener('click', () => {
+            socket.send(JSON.stringify({ type: 'accuse' }));
+        });
+
+        function removePlayedCards() {
+            selectedCards.sort((a, b) => b - a);
+            selectedCards.forEach(index => {
+                playerCards.splice(index, 1);
+            });
+            selectedCards = [];
+            renderCards();
+        }
+
+        function updatePlayedCards(count) {
+            playedCardsCount = count;
+            document.getElementById('playedCardsInfo').innerText = `Rzucone karty: ${playedCardsCount}`;
+        }
+
+        function updateTurn(currentPlayer) {
+            const isMyTurn = currentPlayer === playerNick;
+            document.getElementById('playCard').disabled = !isMyTurn;
+            document.getElementById('accuse').disabled = !isMyTurn;
+            document.getElementById('gameStatus').innerText = isMyTurn ? 'Twoja tura!' : `Tura gracza: ${currentPlayer}`;
+            
+            const gamePlayers = document.querySelectorAll('.game-player');
+            gamePlayers.forEach(player => {
+                player.classList.remove('current-player');
+                if (player.querySelector('div').textContent === currentPlayer) {
+                    player.classList.add('current-player');
+                }
+            });
+            
+            if (isMyTurn) {
+                startTurnTimer();
+            } else {
+                stopTurnTimer();
+            }
+        }
+
+        function startTurnTimer() {
+            remainingTime = 30;
+            updateTimerDisplay();
+            document.getElementById('turnTimer').style.display = 'block';
+            turnTimer = setInterval(() => {
+                remainingTime--;
+                updateTimerDisplay();
+                if (remainingTime <= 0) {
+                    clearInterval(turnTimer);
+                    socket.send(JSON.stringify({ type: 'endTurn' }));
+                }
+            }, 1000);
+        }
+
+        function stopTurnTimer() {
+            clearInterval(turnTimer);
+            document.getElementById('turnTimer').style.display = 'none';
+        }
+
+        function updateTimerDisplay() {
+            document.getElementById('turnTimer').innerText = `Pozostały czas: ${remainingTime}s`;
+        }
+
+        function updateGameState(gameState) {
+            playerCards = gameState.playerCards;
+            renderCards();
+            updatePlayedCards(gameState.playedCardsCount);
+            updateTurn(gameState.currentPlayer);
+            renderGamePlayers(gameState.players);
+            document.getElementById('gameStatus').innerText = gameState.gameStatus;
+        }
+
+        setInterval(() => {
+            socket.send(JSON.stringify({ type: 'requestGameState' }));
+        }, 5000);
+    </script>
+</body>
+</html>
