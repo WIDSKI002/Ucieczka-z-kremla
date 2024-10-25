@@ -242,7 +242,7 @@
         let playerRoundNumbers = {};
    
         function connectWebSocket() {
-            socket = new WebSocket('ws://46.205.199.39:8080');
+            socket = new WebSocket('ws://localhost:8080');
 
             socket.onopen = function() {
                 console.log('Połączono z serwerem WebSocket');
