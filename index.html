@@ -138,9 +138,53 @@
             border: 3px solid #28a745;
             box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
         }
+        #lastPlayedCards {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        #lastPlayedCards .card {
+            margin: 0 5px;
+        }
+        #startingCard {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 240px;
+            height: 360px;
+            background-size: cover;
+            background-position: center;
+            z-index: 1001;
+            display: none;
+        }
+        #currentGameCard {
+            position: fixed;
+            top: 10px;
+            right: 10px;
+            width: 60px;
+            height: 90px;
+            background-size: cover;
+            background-position: center;
+            z-index: 1000;
+            display: none;
+        }
+        #currentGameCardText {
+            position: fixed;
+            top: 110px;
+            right: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            z-index: 1000;
+            display: none;
+        }
     </style>
 </head>
 <body>
+    <div id="startingCard"></div>
+    <div id="currentGameCardText">Gramy:</div>
+    <div id="currentGameCard"></div>
+
     <div id="turnTimer" style="display: none;">Pozostały czas: 30s</div>
     <div id="lobbyContainer" class="lobby-container">
         <h1>Lobby - Ucieczka z Kremla</h1>
@@ -173,7 +217,9 @@
         </div>
         <button id="playCard" class="button" disabled>Rzuć Kartę</button>
         <button id="accuse" class="button" disabled>Oskarż o Kłamstwo</button>
+        <div id="lastPlayerInfo"></div>
         <div id="playedCardsInfo"></div>
+        <div id="lastPlayedCards"></div>
     </div>
 
     <script>
@@ -189,7 +235,12 @@
         let allPlayers = [];
         let turnTimer;
         let remainingTime = 30;
-
+        let lastPlayer = '';
+        let lastPlayedCards = [];
+        let wasAccused = false;
+        let currentGameCard = '';
+        let playerRoundNumbers = {};
+   
         function connectWebSocket() {
             socket = new WebSocket('ws://localhost:8080');
 
@@ -218,16 +269,19 @@
                         updateLobby(data.players, data.playerCount);
                         break;
                     case 'gameStart':
-                        startGame(data.cards, data.players);
+                        startGame(data.cards, data.players, data.startingCard);
                         break;
                     case 'turnUpdate':
                         updateTurn(data.currentPlayer);
                         break;
                     case 'cardPlayed':
-                        updatePlayedCards(data.count);
+                        updatePlayedCards(data.count, data.player, data.cards);
                         break;
                     case 'gameStateUpdate':
                         updateGameState(data.gameState);
+                        break;
+                    case 'accusation':
+                        handleAccusation(data);
                         break;
                 }
             };
@@ -322,7 +376,7 @@
                 avatarImg.alt = player.nick;
                 avatarImg.className = 'avatar';
                 li.appendChild(avatarImg);
-                li.appendChild(document.createTextNode(` ${player.nick} (Pozycja: ${player.position + 1})`));
+                li.appendChild(document.createTextNode(` ${player.nick} `));
                 playerList.appendChild(li);
             });
             document.getElementById('lobbyStatus').innerText = `Graczy w lobby: ${playerCount}/6`;
@@ -332,13 +386,36 @@
             startGameButton.disabled = playerCount < 2;
         }
 
-        function startGame(cards, players) {
+        function startGame(cards, players, startingCard) {
             document.getElementById('lobbyContainer').style.display = 'none';
             document.getElementById('gameContainer').style.display = 'block';
             playerCards = cards;
             renderCards();
+             // Ustaw roundNumber dla każdego gracza
+             players.forEach(player => {
+                playerRoundNumbers[player.nick] = player.roundNumber;
+            });
             renderGamePlayers(players);
             document.getElementById('gameStatus').innerText = 'Gra rozpoczęta! Oczekiwanie na twoją turę...';
+            updateTurn(players[0].nick); // Zakładamy, że pierwszy gracz zaczyna
+
+            // Pokaż startową kartę
+            const startingCardElement = document.getElementById('startingCard');
+            startingCardElement.style.backgroundImage = `url('${startingCard}.png')`;
+            startingCardElement.style.display = 'block';
+
+            // Ukryj startową kartę po 2 sekundach i pokaż aktualną kartę w prawym górnym rogu
+            setTimeout(() => {
+                startingCardElement.style.display = 'none';
+                currentGameCard = startingCard;
+                document.getElementById('currentGameCardText').style.display = 'block';
+                const currentGameCardElement = document.getElementById('currentGameCard');
+                currentGameCardElement.style.backgroundImage = `url('${currentGameCard}.png')`;
+                currentGameCardElement.style.display = 'block';
+             
+            }, 2000);
+
+           
         }
 
         function renderGamePlayers(players) {
@@ -353,7 +430,8 @@
                 avatarImg.alt = player.nick;
                 playerElement.appendChild(avatarImg);
                 const nickElement = document.createElement('div');
-                nickElement.textContent = player.nick;
+                const roundNumber = playerRoundNumbers[player.nick] || 'N/A';
+                nickElement.textContent = `${player.nick} (${roundNumber}/6)`;
                 playerElement.appendChild(nickElement);
                 if (player.nick === playerNick) {
                     playerElement.classList.add('current-player');
@@ -400,6 +478,7 @@
                     cards: selectedCards.map(index => playerCards[index])
                 }));
                 removePlayedCards();
+                socket.send(JSON.stringify({ type: 'endTurn' }));
             } else {
                 alert('Wybierz kartę do rzucenia!');
             }
@@ -418,9 +497,17 @@
             renderCards();
         }
 
-        function updatePlayedCards(count) {
+        function updatePlayedCards(count, player, cards) {
             playedCardsCount = count;
-            document.getElementById('playedCardsInfo').innerText = `Rzucone karty: ${playedCardsCount}`;
+            lastPlayer = player;
+            lastPlayedCards = cards;
+            wasAccused = false;
+          
+            document.getElementById('lastPlayerInfo').innerText = `Gracz ${lastPlayer}:`;
+            document.getElementById('playedCardsInfo').innerText = `Rzucił ${playedCardsCount} ${currentGameCard}`;
+
+            const lastPlayedCardsContainer = document.getElementById('lastPlayedCards');
+            lastPlayedCardsContainer.innerHTML = '';
         }
 
         function updateTurn(currentPlayer) {
@@ -432,7 +519,7 @@
             const gamePlayers = document.querySelectorAll('.game-player');
             gamePlayers.forEach(player => {
                 player.classList.remove('current-player');
-                if (player.querySelector('div').textContent === currentPlayer) {
+                if (player.querySelector('div').textContent.startsWith(currentPlayer)) {
                     player.classList.add('current-player');
                 }
             });
@@ -453,6 +540,15 @@
                 updateTimerDisplay();
                 if (remainingTime <= 0) {
                     clearInterval(turnTimer);
+                    if (playerCards.length > 0) {
+                        const firstCard = playerCards[0];
+                        socket.send(JSON.stringify({
+                            type: 'playCards',
+                            cards: [firstCard]
+                        }));
+                        playerCards.splice(0, 1);
+                        renderCards();
+                    }
                     socket.send(JSON.stringify({ type: 'endTurn' }));
                 }
             }, 1000);
@@ -470,10 +566,25 @@
         function updateGameState(gameState) {
             playerCards = gameState.playerCards;
             renderCards();
-            updatePlayedCards(gameState.playedCardsCount);
+            updatePlayedCards(gameState.playedCardsCount, gameState.lastPlayer, gameState.lastPlayedCards);
             updateTurn(gameState.currentPlayer);
+            gameState.players.forEach(player => {
+                playerRoundNumbers[player.nick] = player.roundNumber;
+            });
             renderGamePlayers(gameState.players);
             document.getElementById('gameStatus').innerText = gameState.gameStatus;
+        }
+
+        function handleAccusation(data) {
+            wasAccused = true;
+            const lastPlayedCardsContainer = document.getElementById('lastPlayedCards');
+            lastPlayedCardsContainer.innerHTML = '';
+            lastPlayedCards.forEach(card => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'card';
+                cardElement.style.backgroundImage = `url('${card}.png')`;
+                lastPlayedCardsContainer.appendChild(cardElement);
+            });
         }
 
         setInterval(() => {
